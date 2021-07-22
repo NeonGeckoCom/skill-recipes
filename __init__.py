@@ -43,44 +43,6 @@ SEARCH = API_URL + 'search.php'
 RANDOM = API_URL + 'random.php'
 
 
-def ingredients(recipe):
-    """Get ingredients from TheMealsDB recipe data
-
-    """
-    ingredients = {}
-    for i in range(1, 21):
-        ingredient_key = 'strIngredient' + str(i)
-        measure_key = 'strMeasure' + str(i)
-        if not recipe[ingredient_key]:
-            break
-        if recipe[measure_key] is not None:
-            ingredients.append(' '.join((recipe[measure_key],
-                                         recipe[ingredient_key])))
-        else:  # If there is no measurement for the ingredient ignore it
-            ingredients.append(recipe[ingredient_key])
-
-    return nice_ingredients(ingredients)
-
-
-def nice_ingredients(ingredients):
-    """Make ingredient list easier to pronounce."""
-    units = {
-        'oz': 'ounce',
-        '1 tbl': '1 table spoon',
-        'tbl': 'table spoons',
-        '1 tsp': 'tea spoon',
-        'tsp': 'tea spoons',
-        'ml ': 'milliliter ',
-        'cl ': 'centiliter '
-    }
-    ret = []
-    for i in ingredients:
-        for word, replacement in units.items():
-            i = i.lower().replace(word, replacement)
-        ret.append(i)
-    return ret
-
-
 class RecipeSkill(MycroftSkill):
 
     def __init__(self):
@@ -100,19 +62,23 @@ class RecipeSkill(MycroftSkill):
         self.register_intent(search_random, self.handle_search_random)
 
         recite_recipe = IntentBuilder("recite_recipe").require("").optionally("").build()
-        self.register_intent(search_random, self.handle_recite_recipe)
-
+        self.register_intent(recite_recipe, self.handle_recite_recipe)
 
     def handle_search_recipe(self, message: Message):
-        recipe_name = message.data.get("meal")
-        recipe = _search_recipe(recipe_name)
+        recipe_name = message.data.get("recipe_name")
+        recipe = self._search_recipe(recipe_name)
         if recipe:
             self.active_recipe = recipe
             ingredients = self._get_ingredients(recipe)
             self.speak_dilog("You will need", {"recipe": recipe_name, "ingredients": ingredients})
 
     def handle_search_random(self, message: Message):
-        pass
+        recipe = self._search_random()
+        if recipe:
+            self.active_recipe = recipe
+            ingredients = self._get_ingredients(recipe)
+            recipe_name = recipe.get('strMeal', 'the meal')
+            self.speak_dilog("You will need", {"recipe": recipe_name, "ingredients": ingredients})
 
     def handle_recite_recipe(self, message: Message):
         pass
@@ -180,12 +146,9 @@ class RecipeSkill(MycroftSkill):
                 break
             if recipe[measure_key]:
                 ingredients[ingredient_key] = measure_key
-                # ingredients.append(' '.join((recipe[measure_key],
-                #                              recipe[ingredient_key])))
             else:  # No measurement -> None
                 ingredients[ingredient_key] = None
-                # ingredients.append(recipe[ingredient_key])
-        self._beautify_ingredients(ingredients)
+        # self._beautify_ingredients(ingredients)
         return ingredients
 
     @staticmethod

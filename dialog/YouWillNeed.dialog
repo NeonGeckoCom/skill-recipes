@@ -1,0 +1,5 @@
+For (this|the) (recipe|meal), you will need {ingredients}.
+For {recipe_name}, you will need {ingredients}.
+{recipe_name} would require {ingredients}.
+You could cook {recipe_name} using {ingredients}.
+Cooking ({recipe_name}|the meal|the recipe) would require {ingredients}.
