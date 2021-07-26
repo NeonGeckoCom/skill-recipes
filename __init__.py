@@ -53,17 +53,18 @@ class RecipeSkill(MycroftSkill):
         load_language(self.internal_language)
         self.active_recipe = None
 
-    def initialize(self):
-        search_recipe = IntentBuilder("search_recipe").require("").require("").optionally(""). \
-            optionally("").build()
-        self.register_intent(search_recipe, self.handle_search_recipe)
+    # def initialize(self):
+        # search_recipe = IntentBuilder("search_recipe").require("").require("").optionally(""). \
+        #     optionally("").build()
+        # self.register_intent(search_recipe, self.handle_search_recipe)
+        #
+        # search_random = IntentBuilder("search_random").require().optionally().build()
+        # self.register_intent(search_random, self.handle_search_random)
+        #
+        # recite_recipe = IntentBuilder("recite_recipe").require("").optionally("").build()
+        # self.register_intent(recite_recipe, self.handle_recite_recipe)
 
-        search_random = IntentBuilder("search_random").require().optionally().build()
-        self.register_intent(search_random, self.handle_search_random)
-
-        recite_recipe = IntentBuilder("recite_recipe").require("").optionally("").build()
-        self.register_intent(recite_recipe, self.handle_recite_recipe)
-
+    @intent_handler('what.is.the.recipe.intent')
     def handle_search_recipe(self, message: Message):
         recipe_name = message.data.get("recipe_name")
         recipe = self._search_recipe(recipe_name)
@@ -74,6 +75,7 @@ class RecipeSkill(MycroftSkill):
         else:
             self.speak_dialog("SearchFailed")
 
+    @intent_handler('random.recipe.intent')
     def handle_search_random(self, message: Message):
         recipe = self._search_random()
         if recipe:
@@ -84,6 +86,7 @@ class RecipeSkill(MycroftSkill):
         else:
             self.speak_dialog("SearchFailed")
 
+    @intent_handler('get.the.recipe.name.intent')
     def handle_get_recipe_name(self, message: Message):
         recipe_name = self.active_recipe.get("strMeal")
         if recipe_name:
@@ -91,6 +94,7 @@ class RecipeSkill(MycroftSkill):
         else:
             self.speak_dialog("NoRecipe")
 
+    @intent_handler('recite.the.instructions.intent')
     def handle_recite_instructions(self, message: Message):
         instructions = self._get_instructions(self.active_recipe)
         if instructions:
@@ -99,6 +103,7 @@ class RecipeSkill(MycroftSkill):
         else:
             self.speak_dialog("NoInstructions")
 
+    @intent_handler('get.the.ingredients.intent')
     def handle_get_ingredients(self, message: Message):
         ingredients = self._get_ingredients(self.active_recipe)
         recipe_name = self.active_recipe.get('strMeal', 'the meal')
@@ -107,6 +112,7 @@ class RecipeSkill(MycroftSkill):
         else:
             self.speak_dialog("NoIngredients")
 
+    @intent_handler('get.the.previous.step.intent')
     def handle_get_previous_step(self, message: Message):
         instructions = self._get_instructions(self.active_recipe)
         next_index = self.current_index - 1
@@ -116,6 +122,7 @@ class RecipeSkill(MycroftSkill):
         else:
             self.speak_dialog("NoPreviousStep")
 
+    @intent_handler('get.the.next.step.intent')
     def handle_get_next_step(self, message: Message):
         instructions = self._get_instructions(self.active_recipe)
         next_index = self.current_index + 1
