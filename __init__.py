@@ -51,18 +51,8 @@ class RecipeSkill(MycroftSkill):
             stub_missing_parameters(self)
         self.internal_language = "en"
         load_language(self.internal_language)
-        self.active_recipe = None
-
-    # def initialize(self):
-        # search_recipe = IntentBuilder("search_recipe").require("").require("").optionally(""). \
-        #     optionally("").build()
-        # self.register_intent(search_recipe, self.handle_search_recipe)
-        #
-        # search_random = IntentBuilder("search_random").require().optionally().build()
-        # self.register_intent(search_random, self.handle_search_random)
-        #
-        # recite_recipe = IntentBuilder("recite_recipe").require("").optionally("").build()
-        # self.register_intent(recite_recipe, self.handle_recite_recipe)
+        self.active_recipe = dict()
+        self.current_index = 0
 
     @intent_handler('what.is.the.recipe.intent')
     def handle_search_recipe(self, message: Message):
@@ -71,7 +61,7 @@ class RecipeSkill(MycroftSkill):
         if recipe:
             self.active_recipe = recipe
             ingredients = self._get_ingredients(recipe)
-            self.speak_dilog("YouWillNeed", {"recipe": recipe_name, "ingredients": ingredients})
+            self.speak_dialog("YouWillNeed", {"recipe": recipe_name, "ingredients": ingredients})
         else:
             self.speak_dialog("SearchFailed")
 
@@ -98,8 +88,9 @@ class RecipeSkill(MycroftSkill):
     def handle_recite_instructions(self, message: Message):
         instructions = self._get_instructions(self.active_recipe)
         if instructions:
-            for step in instructions:
-                self.speak_dialog("ReciteStep", {"step": step})
+            for index in range(len(instructions)):
+                self.current_index = index
+                self.speak_dialog("ReciteStep", {"step": instructions[index]})
         else:
             self.speak_dialog("NoInstructions")
 
@@ -115,10 +106,11 @@ class RecipeSkill(MycroftSkill):
     @intent_handler('get.the.previous.step.intent')
     def handle_get_previous_step(self, message: Message):
         instructions = self._get_instructions(self.active_recipe)
-        next_index = self.current_index - 1
-        if next_index > 0:
+        previous_index = self.current_index - 1
+        if previous_index > 0:
             self.speak_dilog("PreviousStep", {"recipe": self.active_recipe.get("strMeal", "the meal"),
-                                              "step": instructions[next_index]})
+                                              "step": instructions[previous_index]})
+            self.current_index = previous_index
         else:
             self.speak_dialog("NoPreviousStep")
 
@@ -129,6 +121,7 @@ class RecipeSkill(MycroftSkill):
         if next_index < len(instructions):
             self.speak_dilog("NextStep", {"recipe": self.active_recipe.get("strMeal"),
                                           "step": instructions[next_index]})
+            self.current_index = next_index
         else:
             self.speak_dialog("NoNextSteps")
 
