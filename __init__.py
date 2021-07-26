@@ -38,7 +38,7 @@ import time
 
 
 API_KEY = '1'
-API_URL = 'https://www.thecocktaildb.com/api/json/v1/{}/'.format(API_KEY)
+API_URL = 'https://www.themealdb.com/api/json/v1/{}/'.format(API_KEY)
 SEARCH = API_URL + 'search.php'
 RANDOM = API_URL + 'random.php'
 
@@ -70,7 +70,9 @@ class RecipeSkill(MycroftSkill):
         if recipe:
             self.active_recipe = recipe
             ingredients = self._get_ingredients(recipe)
-            self.speak_dilog("You will need", {"recipe": recipe_name, "ingredients": ingredients})
+            self.speak_dilog("YouWillNeed", {"recipe": recipe_name, "ingredients": ingredients})
+        else:
+            self.speak_dialog("SearchFailed")
 
     def handle_search_random(self, message: Message):
         recipe = self._search_random()
@@ -78,33 +80,50 @@ class RecipeSkill(MycroftSkill):
             self.active_recipe = recipe
             ingredients = self._get_ingredients(recipe)
             recipe_name = recipe.get('strMeal', 'the meal')
-            self.speak_dilog("You will need", {"recipe": recipe_name, "ingredients": ingredients})
-
-    def handle_recite_recipe(self, message: Message):
-        pass
-
-    def handle_repeat_ingredients(self, message: Message):
-        pass
-
-    def handle_repeat_last_step(self, message: Message):
-        pass
-
-    def converse(self, message: Message):
-        user = self.get_utterance_user(message)
-        confirmed = self.check_yes_no_response(message)
-        if confirmed == -1:
-            pass
-            # self._speak_dialog_with_transcribe(message=message, args=("AskAgain",))
-            # self.active_conversation[user]["next_action"] = "friendly_chat"
-        elif confirmed:
-            pass
-            # self._speak_dialog_with_transcribe(message=message,
-            #                                    args=("StaffToBeInformed", {"caregiver": caregiver}))
-            # self._inform_staff(entry_message, tags=["not-identified intent"])
-            # self.active_conversation[user].pop("entry_message")
-            # self.active_conversation[user]["next_action"] = None
+            self.speak_dilog("YouWill Need", {"recipe": recipe_name, "ingredients": ingredients})
         else:
-            pass
+            self.speak_dialog("SearchFailed")
+
+    def handle_get_recipe_name(self, message: Message):
+        recipe_name = self.active_recipe.get("strMeal")
+        if recipe_name:
+            self.speak_dialog("CurrentRecipe", {"recipe_name": recipe_name})
+        else:
+            self.speak_dialog("NoRecipe")
+
+    def handle_recite_instructions(self, message: Message):
+        instructions = self._get_instructions(self.active_recipe)
+        if instructions:
+            for step in instructions:
+                self.speak_dialog("ReciteStep", {"step": step})
+        else:
+            self.speak_dialog("NoInstructions")
+
+    def handle_get_ingredients(self, message: Message):
+        ingredients = self._get_ingredients(self.active_recipe)
+        recipe_name = self.active_recipe.get('strMeal', 'the meal')
+        if ingredients:
+            self.speak_dilog("YouWillNeed", {"recipe": recipe_name, "ingredients": ingredients})
+        else:
+            self.speak_dialog("NoIngredients")
+
+    def handle_get_previous_step(self, message: Message):
+        instructions = self._get_instructions(self.active_recipe)
+        next_index = self.current_index - 1
+        if next_index > 0:
+            self.speak_dilog("PreviousStep", {"recipe": self.active_recipe.get("strMeal", "the meal"),
+                                              "step": instructions[next_index]})
+        else:
+            self.speak_dialog("NoPreviousStep")
+
+    def handle_get_next_step(self, message: Message):
+        instructions = self._get_instructions(self.active_recipe)
+        next_index = self.current_index + 1
+        if next_index < len(instructions):
+            self.speak_dilog("NextStep", {"recipe": self.active_recipe.get("strMeal"),
+                                          "step": instructions[next_index]})
+        else:
+            self.speak_dialog("NoNextSteps")
 
     @staticmethod
     def _search_recipe(name: str) -> Optional[dict]:
@@ -142,12 +161,12 @@ class RecipeSkill(MycroftSkill):
         for i in range(1, 21):
             ingredient_key = 'strIngredient' + str(i)
             measure_key = 'strMeasure' + str(i)
-            if not recipe[ingredient_key]:
+            if not recipe.get(ingredient_key):
                 break
             if recipe[measure_key]:
-                ingredients[ingredient_key] = measure_key
+                ingredients[recipe[ingredient_key]] = recipe[measure_key]
             else:  # No measurement -> None
-                ingredients[ingredient_key] = None
+                ingredients[recipe[ingredient_key]] = None
         # self._beautify_ingredients(ingredients)
         return ingredients
 
