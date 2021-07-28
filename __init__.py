@@ -17,24 +17,25 @@
 # US Patents 2008-2021: US7424516, US20140161250, US20140177813, US8638908, US8068604, US8553852, US10530923, US10530924
 # China Patent: CN102017585  -  Europe Patent: EU2156652  -  Patents Pending
 
-import time
-import os
+# import time
+# import os
 import re
 from typing import Optional
-from datetime import datetime, date
-from adapt.intent import IntentBuilder
-from lingua_franca.parse import extract_datetime, extract_duration
+# from datetime import datetime, date
+# from adapt.intent import IntentBuilder
+# from lingua_franca.parse import extract_datetime, extract_duration
 from lingua_franca import load_language
 
 from mycroft import Message
-from mycroft.util.log import LOG
-from mycroft.skills.core import MycroftSkill
-from neon_utils import stub_missing_parameters, skill_needs_patching
-from neon_utils.transcript_utils import write_transcript_file, update_csv
+# from mycroft.util.log import LOG
+# from mycroft.skills.core import MycroftSkill
+# from neon_utils import stub_missing_parameters, skill_needs_patching
+from neon_utils.skills.neon_skill import NeonSkill
+# from neon_utils.transcript_utils import write_transcript_file, update_csv
 
-from mycroft import MycroftSkill, intent_handler, AdaptIntent
+from mycroft import intent_handler
 import requests
-import time
+# import time
 
 
 API_KEY = '1'
@@ -43,12 +44,10 @@ SEARCH = API_URL + 'search.php'
 RANDOM = API_URL + 'random.php'
 
 
-class RecipeSkill(MycroftSkill):
+class RecipeSkill(NeonSkill):
 
     def __init__(self):
         super(RecipeSkill, self).__init__(name="RecipeSkill")
-        if skill_needs_patching(self):
-            stub_missing_parameters(self)
         self.internal_language = "en"
         load_language(self.internal_language)
         self.active_recipe = dict()
@@ -61,7 +60,8 @@ class RecipeSkill(MycroftSkill):
         if recipe:
             self.active_recipe = recipe
             ingredients = self._get_ingredients(recipe)
-            self.speak_dialog("YouWillNeed", {"recipe": recipe_name, "ingredients": ingredients})
+            string_ingredients = self._to_string_ingredients(ingredients)
+            self.speak_dialog("YouWillNeed", {"recipe_name": recipe_name, "ingredients": string_ingredients})
         else:
             self.speak_dialog("SearchFailed")
 
@@ -71,8 +71,9 @@ class RecipeSkill(MycroftSkill):
         if recipe:
             self.active_recipe = recipe
             ingredients = self._get_ingredients(recipe)
+            string_ingredients = self._to_string_ingredients(ingredients)
             recipe_name = recipe.get('strMeal', 'the meal')
-            self.speak_dilog("YouWill Need", {"recipe": recipe_name, "ingredients": ingredients})
+            self.speak_dialog("YouWill Need", {"recipe_name": recipe_name, "ingredients": string_ingredients})
         else:
             self.speak_dialog("SearchFailed")
 
@@ -90,16 +91,17 @@ class RecipeSkill(MycroftSkill):
         if instructions:
             for index in range(len(instructions)):
                 self.current_index = index
-                self.speak_dialog("ReciteStep", {"step": instructions[index]})
+                self.speak_dialog("ReciteStep", {"step": instructions[index]}, wait=True)
         else:
             self.speak_dialog("NoInstructions")
 
     @intent_handler('get.the.ingredients.intent')
     def handle_get_ingredients(self, message: Message):
         ingredients = self._get_ingredients(self.active_recipe)
+        string_ingredients = self._to_string_ingredients(ingredients)
         recipe_name = self.active_recipe.get('strMeal', 'the meal')
         if ingredients:
-            self.speak_dilog("YouWillNeed", {"recipe": recipe_name, "ingredients": ingredients})
+            self.speak_dialog("YouWillNeed", {"recipe_name": recipe_name, "ingredients": string_ingredients})
         else:
             self.speak_dialog("NoIngredients")
 
@@ -108,8 +110,8 @@ class RecipeSkill(MycroftSkill):
         instructions = self._get_instructions(self.active_recipe)
         previous_index = self.current_index - 1
         if previous_index > 0:
-            self.speak_dilog("PreviousStep", {"recipe": self.active_recipe.get("strMeal", "the meal"),
-                                              "step": instructions[previous_index]})
+            self.speak_dialog("PreviousStep", {"recipe_name": self.active_recipe.get("strMeal", "the meal"),
+                                               "step": instructions[previous_index]})
             self.current_index = previous_index
         else:
             self.speak_dialog("NoPreviousStep")
@@ -119,8 +121,8 @@ class RecipeSkill(MycroftSkill):
         instructions = self._get_instructions(self.active_recipe)
         next_index = self.current_index + 1
         if next_index < len(instructions):
-            self.speak_dilog("NextStep", {"recipe": self.active_recipe.get("strMeal"),
-                                          "step": instructions[next_index]})
+            self.speak_dialog("NextStep", {"recipe_name": self.active_recipe.get("strMeal"),
+                                           "step": instructions[next_index]})
             self.current_index = next_index
         else:
             self.speak_dialog("NoNextSteps")
@@ -171,6 +173,14 @@ class RecipeSkill(MycroftSkill):
         return ingredients
 
     @staticmethod
+    def _to_string_ingredients(ingredients: dict) -> Optional[str]:
+        """Make ingredients dict into a string of ingredients and their quantities"""
+        substrings = []
+        for ingredient, quantity in ingredients.items():
+            substrings.append(ingredient+quantity)
+        return ' '.join(substrings) if substrings else None
+
+    @staticmethod
     def _beautify_ingredients(ingredients: dict) -> None:
         """Make ingredient list easier to pronounce."""
         units = {
@@ -194,7 +204,7 @@ class RecipeSkill(MycroftSkill):
         :param recipe: a dict with all the info about the recipe
         :return: a list with recipe steps
         """
-        instruction_text = recipe.get("strInstructions")
+        instruction_text = recipe.get("strInstructions", "")
         instruction_text = re.sub(r'\r+', '', instruction_text)
         instruction_text = re.sub(r'\n+', '', instruction_text)
         return instruction_text.split(".")
