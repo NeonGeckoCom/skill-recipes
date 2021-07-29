@@ -17,25 +17,13 @@
 # US Patents 2008-2021: US7424516, US20140161250, US20140177813, US8638908, US8068604, US8553852, US10530923, US10530924
 # China Patent: CN102017585  -  Europe Patent: EU2156652  -  Patents Pending
 
-# import time
-# import os
+import requests
 import re
 from typing import Optional
-# from datetime import datetime, date
-# from adapt.intent import IntentBuilder
-# from lingua_franca.parse import extract_datetime, extract_duration
 from lingua_franca import load_language
 
-from mycroft import Message
-# from mycroft.util.log import LOG
-# from mycroft.skills.core import MycroftSkill
-# from neon_utils import stub_missing_parameters, skill_needs_patching
+from mycroft import Message, intent_handler
 from neon_utils.skills.neon_skill import NeonSkill
-# from neon_utils.transcript_utils import write_transcript_file, update_csv
-
-from mycroft import intent_handler
-import requests
-# import time
 
 
 API_KEY = '1'
@@ -58,7 +46,7 @@ class RecipeSkill(NeonSkill):
         recipe_name = message.data.get("recipe_name")
         recipe = self._search_recipe(recipe_name)
         if recipe:
-            self.active_recipe = recipe
+            self.active_recipe = self._create_new_recipe(recipe)
             ingredients = self._get_ingredients(recipe)
             string_ingredients = self._to_string_ingredients(ingredients)
             self.speak_dialog("YouWillNeed", {"recipe_name": recipe_name, "ingredients": string_ingredients})
@@ -69,7 +57,7 @@ class RecipeSkill(NeonSkill):
     def handle_search_random(self, message: Message):
         recipe = self._search_random()
         if recipe:
-            self.active_recipe = recipe
+            self.active_recipe = self._create_new_recipe(recipe)
             ingredients = self._get_ingredients(recipe)
             string_ingredients = self._to_string_ingredients(ingredients)
             recipe_name = recipe.get('strMeal', 'the meal')
@@ -104,6 +92,15 @@ class RecipeSkill(NeonSkill):
             self.speak_dialog("YouWillNeed", {"recipe_name": recipe_name, "ingredients": string_ingredients})
         else:
             self.speak_dialog("NoIngredients")
+
+    @intent_handler('get.the.current.step.intent')
+    def handle_get_current_step(self, message: Message):
+        instructions = self._get_instructions(self.active_recipe)
+        try:
+            self.speak_dialog("CurrentStep", {"recipe_name": self.active_recipe.get("strMeal", "the meal"),
+                                              "step": instructions[self.current_index]})
+        except IndexError:  # the instruction list is empty
+            self.speak_dialog("NoInstructions")
 
     @intent_handler('get.the.previous.step.intent')
     def handle_get_previous_step(self, message: Message):
@@ -177,7 +174,7 @@ class RecipeSkill(NeonSkill):
         """Make ingredients dict into a string of ingredients and their quantities"""
         substrings = []
         for ingredient, quantity in ingredients.items():
-            substrings.append(ingredient+quantity)
+            substrings.append(ingredient + " " + quantity)
         return ' '.join(substrings) if substrings else None
 
     @staticmethod
@@ -208,6 +205,12 @@ class RecipeSkill(NeonSkill):
         instruction_text = re.sub(r'\r+', '', instruction_text)
         instruction_text = re.sub(r'\n+', '', instruction_text)
         return instruction_text.split(".")
+
+    def _create_new_recipe(self, recipe: dict) -> dict:
+        """Create a new recipe with side effects"""
+        # TODO: consider using recipe manager to store a queue of recipes
+        self.current_index = 0
+        return recipe
 
 
 def create_skill():
