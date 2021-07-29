@@ -17,25 +17,13 @@
 # US Patents 2008-2021: US7424516, US20140161250, US20140177813, US8638908, US8068604, US8553852, US10530923, US10530924
 # China Patent: CN102017585  -  Europe Patent: EU2156652  -  Patents Pending
 
-# import time
-# import os
 import re
+import requests
 from typing import Optional
-# from datetime import datetime, date
-# from adapt.intent import IntentBuilder
-# from lingua_franca.parse import extract_datetime, extract_duration
 from lingua_franca import load_language
 
-from mycroft import Message
-# from mycroft.util.log import LOG
-# from mycroft.skills.core import MycroftSkill
-# from neon_utils import stub_missing_parameters, skill_needs_patching
+from mycroft import Message, intent_handler
 from neon_utils.skills.neon_skill import NeonSkill
-# from neon_utils.transcript_utils import write_transcript_file, update_csv
-
-from mycroft import intent_handler
-import requests
-# import time
 
 
 API_KEY = '1'
