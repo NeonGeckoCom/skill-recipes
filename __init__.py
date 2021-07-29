@@ -17,13 +17,25 @@
 # US Patents 2008-2021: US7424516, US20140161250, US20140177813, US8638908, US8068604, US8553852, US10530923, US10530924
 # China Patent: CN102017585  -  Europe Patent: EU2156652  -  Patents Pending
 
-import requests
+# import time
+# import os
 import re
 from typing import Optional
+# from datetime import datetime, date
+# from adapt.intent import IntentBuilder
+# from lingua_franca.parse import extract_datetime, extract_duration
 from lingua_franca import load_language
 
-from mycroft import Message, intent_handler
+from mycroft import Message
+# from mycroft.util.log import LOG
+# from mycroft.skills.core import MycroftSkill
+# from neon_utils import stub_missing_parameters, skill_needs_patching
 from neon_utils.skills.neon_skill import NeonSkill
+# from neon_utils.transcript_utils import write_transcript_file, update_csv
+
+from mycroft import intent_handler
+import requests
+# import time
 
 
 API_KEY = '1'
@@ -106,7 +118,7 @@ class RecipeSkill(NeonSkill):
     def handle_get_previous_step(self, message: Message):
         instructions = self._get_instructions(self.active_recipe)
         previous_index = self.current_index - 1
-        if previous_index > 0:
+        if self.current_index > 0:
             self.speak_dialog("PreviousStep", {"recipe_name": self.active_recipe.get("strMeal", "the meal"),
                                                "step": instructions[previous_index]})
             self.current_index = previous_index
@@ -174,7 +186,7 @@ class RecipeSkill(NeonSkill):
         """Make ingredients dict into a string of ingredients and their quantities"""
         substrings = []
         for ingredient, quantity in ingredients.items():
-            substrings.append(ingredient + " " + quantity)
+            substrings.append(ingredient+" "+quantity)
         return ' '.join(substrings) if substrings else None
 
     @staticmethod
@@ -204,7 +216,8 @@ class RecipeSkill(NeonSkill):
         instruction_text = recipe.get("strInstructions", "")
         instruction_text = re.sub(r'\r+', '', instruction_text)
         instruction_text = re.sub(r'\n+', '', instruction_text)
-        return instruction_text.split(".")
+        instruction_list = [step for step in instruction_text.split(".") if step]
+        return instruction_list
 
     def _create_new_recipe(self, recipe: dict) -> dict:
         """Create a new recipe with side effects"""
