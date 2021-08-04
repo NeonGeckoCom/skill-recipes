@@ -20,8 +20,9 @@
 import re
 import requests
 from typing import Optional
-from lingua_franca import load_language
+from abc import ABC, abstractmethod
 
+from lingua_franca import load_language
 from mycroft import Message, intent_handler
 from neon_utils.skills.neon_skill import NeonSkill
 
@@ -30,9 +31,76 @@ API_KEY = '1'
 API_URL = 'https://www.themealdb.com/api/json/v1/{}/'.format(API_KEY)
 SEARCH = API_URL + 'search.php'
 RANDOM = API_URL + 'random.php'
+FILTER = API_URL + 'filter.php'
 
 
-class RecipeSkill(NeonSkill):
+# TODO: remove InstructorSkill from here (move to NeonCore or neon-skill-utils)
+class InstructorSkill(NeonSkill):
+    """This skill acts as an interface for other instruction-oriented skills"""
+
+    def __init__(self, name: str = ''):
+        super(InstructorSkill, self).__init__(name=name)
+
+    @abstractmethod
+    def _access_data_source(self, *args, **kwargs):
+        """A method to establish connection to the data source of instructions"""
+
+    @abstractmethod
+    def _search_in_data_source(self, *args, **kwargs):
+        """Search a data source for instructions"""
+
+    @abstractmethod
+    def _get_instructions(self, *args, **kwargs):
+        """Extract a set of instruction"""
+
+
+# strategies for searching (functional approach)
+def execute_search_random(message: Message) -> Optional[dict]:
+    """
+    Search a random meal in the DB
+    :param message: a Message object associated with the request, a dummy param here to implement a common interface
+    :return: dict with the recipe data, None if request failed
+    """
+    r = requests.get(RANDOM)
+    if 200 <= r.status_code < 300 and r.json().get('meals'):
+        return r.json()['meals'][0]
+    else:
+        return None
+
+
+def execute_search_by_name(message: Message) -> Optional[dict]:
+    """
+    Search TheMealsDB for a meal recipe by recipe_name.
+    :param message: a Message object associated with the request
+    :return: dict with the recipe data, None if request failed
+    """
+    recipe_name = message.data.get("recipe_name")
+    r = requests.get(SEARCH, params={'s': recipe_name})
+    if 200 <= r.status_code < 300 and r.json().get('meals'):
+        return r.json()['meals'][0]
+    else:
+        return None
+
+
+def execute_search_by_ingredient(message: Message) -> Optional[dict]:
+    """
+    Search TheMealsDB for a meal recipe by main ingredient.
+    :param message: a Message object associated with the request
+    :return: list with names of recipes filtered by ingredient
+    """
+    ingredient = message.data.get("ingredient")
+    processes_ingredient = re.sub(r' ', '_', ingredient)
+    r = requests.get(FILTER, params={'i': processes_ingredient})
+    if 200 <= r.status_code < 300 and r.json().get('meals'):
+        recipes = r.json()['meals']
+        recipe_name = recipes[0].get('strMeal', '')
+        message.data["recipe_name"] = recipe_name
+        return execute_search_by_name(message)
+    else:
+        return None
+
+
+class RecipeSkill(InstructorSkill):
 
     def __init__(self):
         super(RecipeSkill, self).__init__(name="RecipeSkill")
@@ -41,29 +109,21 @@ class RecipeSkill(NeonSkill):
         self.active_recipe = dict()
         self.current_index = 0
 
-    @intent_handler('what.is.the.recipe.intent')
-    def handle_search_recipe(self, message: Message):
-        recipe_name = message.data.get("recipe_name")
-        recipe = self._search_recipe(recipe_name)
-        if recipe:
-            self.active_recipe = self._create_new_recipe(recipe)
-            ingredients = self._get_ingredients(recipe)
-            string_ingredients = self._to_string_ingredients(ingredients)
-            self.speak_dialog("YouWillNeed", {"recipe_name": recipe_name, "ingredients": string_ingredients})
-        else:
-            self.speak_dialog("SearchFailed")
+    # intent handlers
+    @intent_handler('get.recipe.by.name.intent')
+    def handle_search_recipe_by_name(self, message: Message):
+        recipe = self._search_in_data_source(search_strategy=execute_search_by_name, message=message)
+        self._after_search(recipe)
 
-    @intent_handler('random.recipe.intent')
+    @intent_handler('get.recipe.by.ingredient.intent')
+    def handle_search_recipe_by_ingredient(self, message: Message):
+        recipe = self._search_in_data_source(search_strategy=execute_search_by_ingredient, message=message)
+        self._after_search(recipe)
+
+    @intent_handler('get.random.recipe.intent')
     def handle_search_random(self, message: Message):
-        recipe = self._search_random()
-        if recipe:
-            self.active_recipe = self._create_new_recipe(recipe)
-            ingredients = self._get_ingredients(recipe)
-            string_ingredients = self._to_string_ingredients(ingredients)
-            recipe_name = recipe.get('strMeal', 'the meal')
-            self.speak_dialog("YouWill Need", {"recipe_name": recipe_name, "ingredients": string_ingredients})
-        else:
-            self.speak_dialog("SearchFailed")
+        recipe = self._search_in_data_source(search_strategy=execute_search_random, message=message)
+        self._after_search(recipe)
 
     @intent_handler('get.the.recipe.name.intent')
     def handle_get_recipe_name(self, message: Message):
@@ -124,31 +184,27 @@ class RecipeSkill(NeonSkill):
         else:
             self.speak_dialog("NoNextSteps")
 
-    @staticmethod
-    def _search_recipe(name: str) -> Optional[dict]:
-        """
-        Search TheMealsDB for a meal recipe.
-        :param name: recipe name to look up in the DB
-        :return: dict with the recipe data, None if request failed
-        """
-        r = requests.get(SEARCH, params={'s': name})
-        if 200 <= r.status_code < 300 and r.json().get('meals'):
-            return r.json()['meals'][0]
-        else:
-            return None
+    # defining abstract methods
+    def _access_data_source(self):
+        pass
+
+    def _search_in_data_source(self, search_strategy, message: Message):
+        return search_strategy(message)
 
     @staticmethod
-    def _search_random() -> Optional[dict]:
+    def _get_instructions(recipe: dict) -> list:
         """
-        Search a random meal in the DB
-        :return: dict with the recipe data, None if request failed
+        Get recipe steps
+        :param recipe: a dict with all the info about the recipe
+        :return: a list with recipe steps
         """
-        r = requests.get(RANDOM)
-        if 200 <= r.status_code < 300 and r.json().get('meals'):
-            return r.json()['meals'][0]
-        else:
-            return None
+        instruction_text = recipe.get("strInstructions", "")
+        instruction_text = re.sub(r'\r+', '', instruction_text)
+        instruction_text = re.sub(r'\n+', '', instruction_text)
+        instruction_list = [step for step in instruction_text.split(".") if step]
+        return instruction_list
 
+    # static utility methods
     @staticmethod
     def _get_ingredients(recipe: dict) -> dict:
         """
@@ -174,7 +230,7 @@ class RecipeSkill(NeonSkill):
         """Make ingredients dict into a string of ingredients and their quantities"""
         substrings = []
         for ingredient, quantity in ingredients.items():
-            substrings.append(ingredient+" "+quantity)
+            substrings.append(ingredient + " " + quantity)
         return ' '.join(substrings) if substrings else None
 
     @staticmethod
@@ -194,24 +250,23 @@ class RecipeSkill(NeonSkill):
                 ingredients[key] = ingredients[key].lower().replace(word, replacement)
         return
 
-    @staticmethod
-    def _get_instructions(recipe: dict) -> list:
-        """
-        Get recipe steps
-        :param recipe: a dict with all the info about the recipe
-        :return: a list with recipe steps
-        """
-        instruction_text = recipe.get("strInstructions", "")
-        instruction_text = re.sub(r'\r+', '', instruction_text)
-        instruction_text = re.sub(r'\n+', '', instruction_text)
-        instruction_list = [step for step in instruction_text.split(".") if step]
-        return instruction_list
-
+    # other utilities
     def _create_new_recipe(self, recipe: dict) -> dict:
         """Create a new recipe with side effects"""
         # TODO: consider using recipe manager to store a queue of recipes
         self.current_index = 0
         return recipe
+
+    def _after_search(self, recipe):
+        """A set of statements to execute after searching"""
+        if recipe:
+            self.active_recipe = self._create_new_recipe(recipe)
+            ingredients = self._get_ingredients(recipe)
+            string_ingredients = self._to_string_ingredients(ingredients)
+            recipe_name = recipe.get('strMeal', 'the meal')
+            self.speak_dialog("YouWillNeed", {"recipe_name": recipe_name, "ingredients": string_ingredients})
+        else:
+            self.speak_dialog("SearchFailed")
 
 
 def create_skill():
