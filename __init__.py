@@ -24,7 +24,7 @@ from abc import ABC, abstractmethod
 
 from lingua_franca import load_language
 from mycroft import Message, intent_handler
-from neon_utils.skills.neon_skill import NeonSkill
+from neon_utils.skills.instructor_skill import InstructorSkill
 
 
 API_KEY = '1'
@@ -32,26 +32,6 @@ API_URL = 'https://www.themealdb.com/api/json/v1/{}/'.format(API_KEY)
 SEARCH = API_URL + 'search.php'
 RANDOM = API_URL + 'random.php'
 FILTER = API_URL + 'filter.php'
-
-
-# TODO: remove InstructorSkill from here (move to NeonCore or neon-skill-utils)
-class InstructorSkill(NeonSkill):
-    """This skill acts as an interface for other instruction-oriented skills"""
-
-    def __init__(self, name: str = ''):
-        super(InstructorSkill, self).__init__(name=name)
-
-    @abstractmethod
-    def _access_data_source(self, *args, **kwargs):
-        """A method to establish connection to the data source of instructions"""
-
-    @abstractmethod
-    def _search_in_data_source(self, *args, **kwargs):
-        """Search a data source for instructions"""
-
-    @abstractmethod
-    def _get_instructions(self, *args, **kwargs):
-        """Extract a set of instruction"""
 
 
 # strategies for searching (functional approach)
