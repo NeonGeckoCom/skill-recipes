@@ -20,11 +20,11 @@
 import re
 import requests
 from typing import Optional
-from abc import ABC, abstractmethod
 
-from lingua_franca import load_language
 from mycroft import Message, intent_handler
 from neon_utils.skills.instructor_skill import InstructorSkill
+
+from .recipe_utils import Recipe, RecipeStorage
 
 
 API_KEY = '1'
@@ -85,29 +85,32 @@ class RecipeSkill(InstructorSkill):
     def __init__(self):
         super(RecipeSkill, self).__init__(name="RecipeSkill")
         self.internal_language = "en"
-        load_language(self.internal_language)
-        self.active_recipe = dict()
-        self.current_index = 0
+        self.recipe_storage = RecipeStorage()
 
     # intent handlers
     @intent_handler('get.recipe.by.name.intent')
     def handle_search_recipe_by_name(self, message: Message):
-        recipe = self._search_in_data_source(search_strategy=execute_search_by_name, message=message)
-        self._after_search(recipe)
+        user = self.get_utterance_user(message=message)
+        recipe_data = self._search_in_data_source(search_strategy=execute_search_by_name, message=message)
+        self._after_search(recipe_data=recipe_data, user=user)
 
     @intent_handler('get.recipe.by.ingredient.intent')
     def handle_search_recipe_by_ingredient(self, message: Message):
-        recipe = self._search_in_data_source(search_strategy=execute_search_by_ingredient, message=message)
-        self._after_search(recipe)
+        user = self.get_utterance_user(message=message)
+        recipe_data = self._search_in_data_source(search_strategy=execute_search_by_ingredient, message=message)
+        self._after_search(recipe_data=recipe_data, user=user)
 
     @intent_handler('get.random.recipe.intent')
     def handle_search_random(self, message: Message):
-        recipe = self._search_in_data_source(search_strategy=execute_search_random, message=message)
-        self._after_search(recipe)
+        user = self.get_utterance_user(message=message)
+        recipe_data = self._search_in_data_source(search_strategy=execute_search_random, message=message)
+        self._after_search(recipe_data=recipe_data, user=user)
 
     @intent_handler('get.the.recipe.name.intent')
     def handle_get_recipe_name(self, message: Message):
-        recipe_name = self.active_recipe.get("strMeal")
+        user = self.get_utterance_user(message=message)
+        current_recipe = self.recipe_storage.get_current_recipe(user=user)
+        recipe_name = current_recipe.get(item="strMeal")
         if recipe_name:
             self.speak_dialog("CurrentRecipe", {"recipe_name": recipe_name})
         else:
@@ -115,19 +118,27 @@ class RecipeSkill(InstructorSkill):
 
     @intent_handler('recite.the.instructions.intent')
     def handle_recite_instructions(self, message: Message):
-        instructions = self._get_instructions(self.active_recipe)
+        user = self.get_utterance_user(message=message)
+        current_recipe = self.recipe_storage.get_current_recipe(user=user)
+        recipe_data = current_recipe.get_recipe_data()
+
+        instructions = self._get_instructions(recipe_data)
         if instructions:
             for index in range(len(instructions)):
-                self.current_index = index
+                current_recipe.update_current_index(new_index=index)
                 self.speak_dialog("ReciteStep", {"step": instructions[index]}, wait=True)
         else:
             self.speak_dialog("NoInstructions")
 
     @intent_handler('get.the.ingredients.intent')
     def handle_get_ingredients(self, message: Message):
-        ingredients = self._get_ingredients(self.active_recipe)
+        user = self.get_utterance_user(message=message)
+        current_recipe = self.recipe_storage.get_current_recipe(user=user)
+        recipe_data = current_recipe.get_recipe_data()
+
+        ingredients = self._get_ingredients(recipe_data)
         string_ingredients = self._to_string_ingredients(ingredients)
-        recipe_name = self.active_recipe.get('strMeal', 'the meal')
+        recipe_name = current_recipe.get(item='strMeal', default='the meal')
         if ingredients:
             self.speak_dialog("YouWillNeed", {"recipe_name": recipe_name, "ingredients": string_ingredients})
         else:
@@ -135,32 +146,49 @@ class RecipeSkill(InstructorSkill):
 
     @intent_handler('get.the.current.step.intent')
     def handle_get_current_step(self, message: Message):
-        instructions = self._get_instructions(self.active_recipe)
+        user = self.get_utterance_user(message=message)
+        current_recipe = self.recipe_storage.get_current_recipe(user=user)
+        current_index = current_recipe.get_current_index()
+        recipe_data = current_recipe.get_recipe_data()
+
+        instructions = self._get_instructions(recipe_data)
+        recipe_name = current_recipe.get(item='strMeal', default='the meal')
         try:
-            self.speak_dialog("CurrentStep", {"recipe_name": self.active_recipe.get("strMeal", "the meal"),
-                                              "step": instructions[self.current_index]})
+            self.speak_dialog("CurrentStep", {"recipe_name": recipe_name,
+                                              "step": instructions[current_index]})
         except IndexError:  # the instruction list is empty
             self.speak_dialog("NoInstructions")
 
     @intent_handler('get.the.previous.step.intent')
     def handle_get_previous_step(self, message: Message):
-        instructions = self._get_instructions(self.active_recipe)
-        previous_index = self.current_index - 1
-        if self.current_index > 0:
-            self.speak_dialog("PreviousStep", {"recipe_name": self.active_recipe.get("strMeal", "the meal"),
+        user = self.get_utterance_user(message=message)
+        current_recipe = self.recipe_storage.get_current_recipe(user=user)
+        recipe_data = current_recipe.get_recipe_data()
+        current_index = current_recipe.get_current_index()
+
+        instructions = self._get_instructions(recipe_data)
+        previous_index = current_index - 1
+        recipe_name = current_recipe.get(item='strMeal', default='the meal')
+        if current_index > 0:
+            self.speak_dialog("PreviousStep", {"recipe_name": recipe_name,
                                                "step": instructions[previous_index]})
-            self.current_index = previous_index
+            current_recipe.update_current_index(new_index=previous_index)
         else:
             self.speak_dialog("NoPreviousStep")
 
     @intent_handler('get.the.next.step.intent')
     def handle_get_next_step(self, message: Message):
-        instructions = self._get_instructions(self.active_recipe)
-        next_index = self.current_index + 1
+        user = self.get_utterance_user(message=message)
+        current_recipe = self.recipe_storage.get_current_recipe(user=user)
+        recipe_data = current_recipe.get_recipe_data()
+        current_index = current_recipe.get_current_index()
+
+        instructions = self._get_instructions(recipe_data)
+        next_index = current_index + 1
         if next_index < len(instructions):
-            self.speak_dialog("NextStep", {"recipe_name": self.active_recipe.get("strMeal"),
+            self.speak_dialog("NextStep", {"recipe_name": recipe_data.get("strMeal"),
                                            "step": instructions[next_index]})
-            self.current_index = next_index
+            current_recipe.update_current_index(new_index=next_index)
         else:
             self.speak_dialog("NoNextSteps")
 
@@ -202,12 +230,11 @@ class RecipeSkill(InstructorSkill):
                 ingredients[recipe[ingredient_key]] = recipe[measure_key]
             else:  # No measurement -> None
                 ingredients[recipe[ingredient_key]] = None
-        # self._beautify_ingredients(ingredients)
         return ingredients
 
     @staticmethod
     def _to_string_ingredients(ingredients: dict) -> Optional[str]:
-        """Make ingredients dict into a string of ingredients and their quantities"""
+        """Make ingredients dict into a string of ingredients and their quantities."""
         substrings = []
         for ingredient, quantity in ingredients.items():
             substrings.append(ingredient + " " + quantity)
@@ -231,19 +258,19 @@ class RecipeSkill(InstructorSkill):
         return
 
     # other utilities
-    def _create_new_recipe(self, recipe: dict) -> dict:
-        """Create a new recipe with side effects"""
+    def _create_new_recipe(self, recipe_data: dict, user: str):
+        """Create a new recipe with side effects."""
         # TODO: consider using recipe manager to store a queue of recipes
-        self.current_index = 0
-        return recipe
+        recipe = Recipe(recipe_data)
+        self.recipe_storage.assign_recipe(user=user, recipe=recipe)
 
-    def _after_search(self, recipe):
-        """A set of statements to execute after searching"""
-        if recipe:
-            self.active_recipe = self._create_new_recipe(recipe)
-            ingredients = self._get_ingredients(recipe)
+    def _after_search(self, recipe_data: dict, user: str):
+        """A set of statements to execute after searching."""
+        if recipe_data:
+            self._create_new_recipe(recipe_data=recipe_data, user=user)
+            ingredients = self._get_ingredients(recipe_data)
             string_ingredients = self._to_string_ingredients(ingredients)
-            recipe_name = recipe.get('strMeal', 'the meal')
+            recipe_name = recipe_data.get('strMeal', 'the meal')
             self.speak_dialog("YouWillNeed", {"recipe_name": recipe_name, "ingredients": string_ingredients})
         else:
             self.speak_dialog("SearchFailed")
