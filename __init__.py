@@ -17,154 +17,202 @@
 # US Patents 2008-2021: US7424516, US20140161250, US20140177813, US8638908, US8068604, US8553852, US10530923, US10530924
 # China Patent: CN102017585  -  Europe Patent: EU2156652  -  Patents Pending
 
-import time
-import os
 import re
-from typing import Optional
-from datetime import datetime, date
-from adapt.intent import IntentBuilder
-from lingua_franca.parse import extract_datetime, extract_duration
-from lingua_franca import load_language
-
-from mycroft import Message
-from mycroft.util.log import LOG
-from mycroft.skills.core import MycroftSkill
-from neon_utils import stub_missing_parameters, skill_needs_patching
-from neon_utils.transcript_utils import write_transcript_file, update_csv
-
-from mycroft import MycroftSkill, intent_handler, AdaptIntent
 import requests
-import time
+from typing import Optional
+
+from mycroft import Message, intent_handler
+from neon_utils.skills.instructor_skill import InstructorSkill
+
+from .recipe_utils import Recipe, RecipeStorage
 
 
 API_KEY = '1'
-API_URL = 'https://www.thecocktaildb.com/api/json/v1/{}/'.format(API_KEY)
+API_URL = 'https://www.themealdb.com/api/json/v1/{}/'.format(API_KEY)
 SEARCH = API_URL + 'search.php'
 RANDOM = API_URL + 'random.php'
+FILTER = API_URL + 'filter.php'
 
 
-def ingredients(recipe):
-    """Get ingredients from TheMealsDB recipe data
-
+# strategies for searching (functional approach)
+def execute_search_random(message: Message) -> Optional[dict]:
     """
-    ingredients = {}
-    for i in range(1, 21):
-        ingredient_key = 'strIngredient' + str(i)
-        measure_key = 'strMeasure' + str(i)
-        if not recipe[ingredient_key]:
-            break
-        if recipe[measure_key] is not None:
-            ingredients.append(' '.join((recipe[measure_key],
-                                         recipe[ingredient_key])))
-        else:  # If there is no measurement for the ingredient ignore it
-            ingredients.append(recipe[ingredient_key])
-
-    return nice_ingredients(ingredients)
+    Search a random meal in the DB
+    :param message: a Message object associated with the request, a dummy param here to implement a common interface
+    :return: dict with the recipe data, None if request failed
+    """
+    r = requests.get(RANDOM)
+    if 200 <= r.status_code < 300 and r.json().get('meals'):
+        return r.json()['meals'][0]
+    else:
+        return None
 
 
-def nice_ingredients(ingredients):
-    """Make ingredient list easier to pronounce."""
-    units = {
-        'oz': 'ounce',
-        '1 tbl': '1 table spoon',
-        'tbl': 'table spoons',
-        '1 tsp': 'tea spoon',
-        'tsp': 'tea spoons',
-        'ml ': 'milliliter ',
-        'cl ': 'centiliter '
-    }
-    ret = []
-    for i in ingredients:
-        for word, replacement in units.items():
-            i = i.lower().replace(word, replacement)
-        ret.append(i)
-    return ret
+def execute_search_by_name(message: Message) -> Optional[dict]:
+    """
+    Search TheMealsDB for a meal recipe by recipe_name.
+    :param message: a Message object associated with the request
+    :return: dict with the recipe data, None if request failed
+    """
+    recipe_name = message.data.get("recipe_name")
+    r = requests.get(SEARCH, params={'s': recipe_name})
+    if 200 <= r.status_code < 300 and r.json().get('meals'):
+        return r.json()['meals'][0]
+    else:
+        return None
 
 
-class RecipeSkill(MycroftSkill):
+def execute_search_by_ingredient(message: Message) -> Optional[dict]:
+    """
+    Search TheMealsDB for a meal recipe by main ingredient.
+    :param message: a Message object associated with the request
+    :return: list with names of recipes filtered by ingredient
+    """
+    ingredient = message.data.get("ingredient")
+    processes_ingredient = re.sub(r' ', '_', ingredient)
+    r = requests.get(FILTER, params={'i': processes_ingredient})
+    if 200 <= r.status_code < 300 and r.json().get('meals'):
+        recipes = r.json()['meals']
+        recipe_name = recipes[0].get('strMeal', '')
+        message.data["recipe_name"] = recipe_name
+        return execute_search_by_name(message)
+    else:
+        return None
+
+
+class RecipeSkill(InstructorSkill):
 
     def __init__(self):
         super(RecipeSkill, self).__init__(name="RecipeSkill")
-        if skill_needs_patching(self):
-            stub_missing_parameters(self)
         self.internal_language = "en"
-        load_language(self.internal_language)
-        self.active_recipe = None
+        self.recipe_storage = RecipeStorage()
 
-    def initialize(self):
-        search_recipe = IntentBuilder("search_recipe").require("").require("").optionally(""). \
-            optionally("").build()
-        self.register_intent(search_recipe, self.handle_search_recipe)
+    # intent handlers
+    @intent_handler('get.recipe.by.name.intent')
+    def handle_search_recipe_by_name(self, message: Message):
+        user = self.get_utterance_user(message=message)
+        recipe_data = self._search_in_data_source(search_strategy=execute_search_by_name, message=message)
+        self._after_search(recipe_data=recipe_data, user=user)
 
-        search_random = IntentBuilder("search_random").require().optionally().build()
-        self.register_intent(search_random, self.handle_search_random)
+    @intent_handler('get.recipe.by.ingredient.intent')
+    def handle_search_recipe_by_ingredient(self, message: Message):
+        user = self.get_utterance_user(message=message)
+        recipe_data = self._search_in_data_source(search_strategy=execute_search_by_ingredient, message=message)
+        self._after_search(recipe_data=recipe_data, user=user)
 
-        recite_recipe = IntentBuilder("recite_recipe").require("").optionally("").build()
-        self.register_intent(search_random, self.handle_recite_recipe)
-
-
-    def handle_search_recipe(self, message: Message):
-        recipe_name = message.data.get("meal")
-        recipe = _search_recipe(recipe_name)
-        if recipe:
-            self.active_recipe = recipe
-            ingredients = self._get_ingredients(recipe)
-            self.speak_dilog("You will need", {"recipe": recipe_name, "ingredients": ingredients})
-
+    @intent_handler('get.random.recipe.intent')
     def handle_search_random(self, message: Message):
-        pass
+        user = self.get_utterance_user(message=message)
+        recipe_data = self._search_in_data_source(search_strategy=execute_search_random, message=message)
+        self._after_search(recipe_data=recipe_data, user=user)
 
-    def handle_recite_recipe(self, message: Message):
-        pass
-
-    def handle_repeat_ingredients(self, message: Message):
-        pass
-
-    def handle_repeat_last_step(self, message: Message):
-        pass
-
-    def converse(self, message: Message):
-        user = self.get_utterance_user(message)
-        confirmed = self.check_yes_no_response(message)
-        if confirmed == -1:
-            pass
-            # self._speak_dialog_with_transcribe(message=message, args=("AskAgain",))
-            # self.active_conversation[user]["next_action"] = "friendly_chat"
-        elif confirmed:
-            pass
-            # self._speak_dialog_with_transcribe(message=message,
-            #                                    args=("StaffToBeInformed", {"caregiver": caregiver}))
-            # self._inform_staff(entry_message, tags=["not-identified intent"])
-            # self.active_conversation[user].pop("entry_message")
-            # self.active_conversation[user]["next_action"] = None
+    @intent_handler('get.the.recipe.name.intent')
+    def handle_get_recipe_name(self, message: Message):
+        user = self.get_utterance_user(message=message)
+        current_recipe = self.recipe_storage.get_current_recipe(user=user)
+        recipe_name = current_recipe.get(item="strMeal")
+        if recipe_name:
+            self.speak_dialog("CurrentRecipe", {"recipe_name": recipe_name})
         else:
-            pass
+            self.speak_dialog("NoRecipe")
+
+    @intent_handler('recite.the.instructions.intent')
+    def handle_recite_instructions(self, message: Message):
+        user = self.get_utterance_user(message=message)
+        current_recipe = self.recipe_storage.get_current_recipe(user=user)
+        recipe_data = current_recipe.get_recipe_data()
+
+        instructions = self._get_instructions(recipe_data)
+        if instructions:
+            for index in range(len(instructions)):
+                current_recipe.update_current_index(new_index=index)
+                self.speak_dialog("ReciteStep", {"step": instructions[index]}, wait=True)
+        else:
+            self.speak_dialog("NoInstructions")
+
+    @intent_handler('get.the.ingredients.intent')
+    def handle_get_ingredients(self, message: Message):
+        user = self.get_utterance_user(message=message)
+        current_recipe = self.recipe_storage.get_current_recipe(user=user)
+        recipe_data = current_recipe.get_recipe_data()
+
+        ingredients = self._get_ingredients(recipe_data)
+        string_ingredients = self._to_string_ingredients(ingredients)
+        recipe_name = current_recipe.get(item='strMeal', default='the meal')
+        if ingredients:
+            self.speak_dialog("YouWillNeed", {"recipe_name": recipe_name, "ingredients": string_ingredients})
+        else:
+            self.speak_dialog("NoIngredients")
+
+    @intent_handler('get.the.current.step.intent')
+    def handle_get_current_step(self, message: Message):
+        user = self.get_utterance_user(message=message)
+        current_recipe = self.recipe_storage.get_current_recipe(user=user)
+        current_index = current_recipe.get_current_index()
+        recipe_data = current_recipe.get_recipe_data()
+
+        instructions = self._get_instructions(recipe_data)
+        recipe_name = current_recipe.get(item='strMeal', default='the meal')
+        try:
+            self.speak_dialog("CurrentStep", {"recipe_name": recipe_name,
+                                              "step": instructions[current_index]})
+        except IndexError:  # the instruction list is empty
+            self.speak_dialog("NoInstructions")
+
+    @intent_handler('get.the.previous.step.intent')
+    def handle_get_previous_step(self, message: Message):
+        user = self.get_utterance_user(message=message)
+        current_recipe = self.recipe_storage.get_current_recipe(user=user)
+        recipe_data = current_recipe.get_recipe_data()
+        current_index = current_recipe.get_current_index()
+
+        instructions = self._get_instructions(recipe_data)
+        previous_index = current_index - 1
+        recipe_name = current_recipe.get(item='strMeal', default='the meal')
+        if current_index > 0:
+            self.speak_dialog("PreviousStep", {"recipe_name": recipe_name,
+                                               "step": instructions[previous_index]})
+            current_recipe.update_current_index(new_index=previous_index)
+        else:
+            self.speak_dialog("NoPreviousStep")
+
+    @intent_handler('get.the.next.step.intent')
+    def handle_get_next_step(self, message: Message):
+        user = self.get_utterance_user(message=message)
+        current_recipe = self.recipe_storage.get_current_recipe(user=user)
+        recipe_data = current_recipe.get_recipe_data()
+        current_index = current_recipe.get_current_index()
+
+        instructions = self._get_instructions(recipe_data)
+        next_index = current_index + 1
+        if next_index < len(instructions):
+            self.speak_dialog("NextStep", {"recipe_name": recipe_data.get("strMeal"),
+                                           "step": instructions[next_index]})
+            current_recipe.update_current_index(new_index=next_index)
+        else:
+            self.speak_dialog("NoNextSteps")
+
+    # defining abstract methods
+    def _access_data_source(self):
+        pass
+
+    def _search_in_data_source(self, search_strategy, message: Message):
+        return search_strategy(message)
 
     @staticmethod
-    def _search_recipe(name: str) -> Optional[dict]:
+    def _get_instructions(recipe: dict) -> list:
         """
-        Search TheMealsDB for a meal recipe.
-        :param name: recipe name to look up in the DB
-        :return: dict with the recipe data, None if request failed
+        Get recipe steps
+        :param recipe: a dict with all the info about the recipe
+        :return: a list with recipe steps
         """
-        r = requests.get(SEARCH, params={'s': name})
-        if 200 <= r.status_code < 300 and r.json().get('meals'):
-            return r.json()['meals'][0]
-        else:
-            return None
+        instruction_text = recipe.get("strInstructions", "")
+        instruction_text = re.sub(r'\r+', '', instruction_text)
+        instruction_text = re.sub(r'\n+', '', instruction_text)
+        instruction_list = [step for step in instruction_text.split(".") if step]
+        return instruction_list
 
-    @staticmethod
-    def _search_random() -> Optional[dict]:
-        """
-        Search a random meal in the DB
-        :return: dict with the recipe data, None if request failed
-        """
-        r = requests.get(RANDOM)
-        if 200 <= r.status_code < 300 and r.json().get('meals'):
-            return r.json()['meals'][0]
-        else:
-            return None
-
+    # static utility methods
     @staticmethod
     def _get_ingredients(recipe: dict) -> dict:
         """
@@ -176,17 +224,21 @@ class RecipeSkill(MycroftSkill):
         for i in range(1, 21):
             ingredient_key = 'strIngredient' + str(i)
             measure_key = 'strMeasure' + str(i)
-            if not recipe[ingredient_key]:
+            if not recipe.get(ingredient_key):
                 break
             if recipe[measure_key]:
-                ingredients[ingredient_key] = measure_key
-                # ingredients.append(' '.join((recipe[measure_key],
-                #                              recipe[ingredient_key])))
+                ingredients[recipe[ingredient_key]] = recipe[measure_key]
             else:  # No measurement -> None
-                ingredients[ingredient_key] = None
-                # ingredients.append(recipe[ingredient_key])
-        self._beautify_ingredients(ingredients)
+                ingredients[recipe[ingredient_key]] = None
         return ingredients
+
+    @staticmethod
+    def _to_string_ingredients(ingredients: dict) -> Optional[str]:
+        """Make ingredients dict into a string of ingredients and their quantities."""
+        substrings = []
+        for ingredient, quantity in ingredients.items():
+            substrings.append(ingredient + " " + quantity)
+        return ' '.join(substrings) if substrings else None
 
     @staticmethod
     def _beautify_ingredients(ingredients: dict) -> None:
@@ -205,17 +257,23 @@ class RecipeSkill(MycroftSkill):
                 ingredients[key] = ingredients[key].lower().replace(word, replacement)
         return
 
-    @staticmethod
-    def _get_instructions(recipe: dict) -> list:
-        """
-        Get recipe steps
-        :param recipe: a dict with all the info about the recipe
-        :return: a list with recipe steps
-        """
-        instruction_text = recipe.get("strInstructions")
-        instruction_text = re.sub(r'\r+', '', instruction_text)
-        instruction_text = re.sub(r'\n+', '', instruction_text)
-        return instruction_text.split(".")
+    # other utilities
+    def _create_new_recipe(self, recipe_data: dict, user: str):
+        """Create a new recipe with side effects."""
+        # TODO: consider using recipe manager to store a queue of recipes
+        recipe = Recipe(recipe_data)
+        self.recipe_storage.assign_recipe(user=user, recipe=recipe)
+
+    def _after_search(self, recipe_data: dict, user: str):
+        """A set of statements to execute after searching."""
+        if recipe_data:
+            self._create_new_recipe(recipe_data=recipe_data, user=user)
+            ingredients = self._get_ingredients(recipe_data)
+            string_ingredients = self._to_string_ingredients(ingredients)
+            recipe_name = recipe_data.get('strMeal', 'the meal')
+            self.speak_dialog("YouWillNeed", {"recipe_name": recipe_name, "ingredients": string_ingredients})
+        else:
+            self.speak_dialog("SearchFailed")
 
 
 def create_skill():
