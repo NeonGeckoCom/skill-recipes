@@ -1,6 +1,6 @@
 {
     "title": "Recipes",
-    "url": "https://github.com/NeonGeckoCom/skill-recipes.git",
+    "url": "https://github.com/NeonGeckoCom/skill-recipes",
     "summary": "Get help making a meal.",
     "short_description": "Get help making a meal.",
     "description": "Uses themealdb.com to find recipes",
@@ -40,7 +40,7 @@
         "NeonGeckoCom",
         "NeonAndrii"
     ],
-    "skillname": "Recipes",
+    "skillname": "skill-recipes",
     "authorname": "NeonGeckoCom",
     "foldername": null
 }
