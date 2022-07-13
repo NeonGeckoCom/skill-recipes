@@ -32,7 +32,7 @@ from typing import Optional
 
 from mycroft import Message, intent_handler
 from neon_utils.skills.instructor_skill import InstructorSkill
-
+from neon_utils.message_utils import get_message_user
 from .recipe_utils import Recipe, RecipeStorage
 
 
@@ -99,25 +99,25 @@ class RecipeSkill(InstructorSkill):
     # intent handlers
     @intent_handler('get.recipe.by.name.intent')
     def handle_search_recipe_by_name(self, message: Message):
-        user = self.get_utterance_user(message=message)
+        user = get_message_user(message=message)
         recipe_data = self._search_in_data_source(search_strategy=execute_search_by_name, message=message)
         self._after_search(recipe_data=recipe_data, user=user)
 
     @intent_handler('get.recipe.by.ingredient.intent')
     def handle_search_recipe_by_ingredient(self, message: Message):
-        user = self.get_utterance_user(message=message)
+        user = get_message_user(message=message)
         recipe_data = self._search_in_data_source(search_strategy=execute_search_by_ingredient, message=message)
         self._after_search(recipe_data=recipe_data, user=user)
 
     @intent_handler('get.random.recipe.intent')
     def handle_search_random(self, message: Message):
-        user = self.get_utterance_user(message=message)
+        user = get_message_user(message=message)
         recipe_data = self._search_in_data_source(search_strategy=execute_search_random, message=message)
         self._after_search(recipe_data=recipe_data, user=user)
 
     @intent_handler('get.the.recipe.name.intent')
     def handle_get_recipe_name(self, message: Message):
-        user = self.get_utterance_user(message=message)
+        user = get_message_user(message=message)
         current_recipe = self.recipe_storage.get_current_recipe(user=user)
         recipe_name = current_recipe.get(item="strMeal")
         if recipe_name:
@@ -127,7 +127,7 @@ class RecipeSkill(InstructorSkill):
 
     @intent_handler('recite.the.instructions.intent')
     def handle_recite_instructions(self, message: Message):
-        user = self.get_utterance_user(message=message)
+        user = get_message_user(message=message)
         current_recipe = self.recipe_storage.get_current_recipe(user=user)
         recipe_data = current_recipe.get_recipe_data()
 
@@ -141,7 +141,7 @@ class RecipeSkill(InstructorSkill):
 
     @intent_handler('get.the.ingredients.intent')
     def handle_get_ingredients(self, message: Message):
-        user = self.get_utterance_user(message=message)
+        user = get_message_user(message=message)
         current_recipe = self.recipe_storage.get_current_recipe(user=user)
         recipe_data = current_recipe.get_recipe_data()
 
@@ -155,7 +155,7 @@ class RecipeSkill(InstructorSkill):
 
     @intent_handler('get.the.current.step.intent')
     def handle_get_current_step(self, message: Message):
-        user = self.get_utterance_user(message=message)
+        user = get_message_user(message=message)
         current_recipe = self.recipe_storage.get_current_recipe(user=user)
         current_index = current_recipe.get_current_index()
         recipe_data = current_recipe.get_recipe_data()
@@ -170,7 +170,7 @@ class RecipeSkill(InstructorSkill):
 
     @intent_handler('get.the.previous.step.intent')
     def handle_get_previous_step(self, message: Message):
-        user = self.get_utterance_user(message=message)
+        user = get_message_user(message=message)
         current_recipe = self.recipe_storage.get_current_recipe(user=user)
         recipe_data = current_recipe.get_recipe_data()
         current_index = current_recipe.get_current_index()
@@ -187,7 +187,7 @@ class RecipeSkill(InstructorSkill):
 
     @intent_handler('get.the.next.step.intent')
     def handle_get_next_step(self, message: Message):
-        user = self.get_utterance_user(message=message)
+        user = get_message_user(message=message)
         current_recipe = self.recipe_storage.get_current_recipe(user=user)
         recipe_data = current_recipe.get_recipe_data()
         current_index = current_recipe.get_current_index()
