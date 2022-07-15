@@ -90,7 +90,6 @@ def execute_search_by_ingredient(message: Message) -> Optional[dict]:
 
 
 class RecipeSkill(InstructorSkill):
-
     def __init__(self):
         super(RecipeSkill, self).__init__(name="RecipeSkill")
         self.internal_language = "en"
