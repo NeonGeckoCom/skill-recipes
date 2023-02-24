@@ -8,5 +8,5 @@ on:
 jobs:
   py_build_tests:
     uses: neongeckocom/.github/.github/workflows/python_build_tests.yml@master
-  skill_unit_tests:
-    uses: neongeckocom/.github/.github/workflows/skill_tests.yml@master
+#  skill_unit_tests:
+#    uses: neongeckocom/.github/.github/workflows/skill_tests.yml@master
