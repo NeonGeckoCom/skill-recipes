@@ -33,6 +33,8 @@ from typing import Optional
 from mycroft import Message, intent_handler
 from neon_utils.skills.instructor_skill import InstructorSkill
 from neon_utils.message_utils import get_message_user
+from ovos_utils import classproperty
+from ovos_utils.process_utils import RuntimeRequirements
 from .recipe_utils import Recipe, RecipeStorage
 
 
@@ -94,6 +96,18 @@ class RecipeSkill(InstructorSkill):
         super(RecipeSkill, self).__init__(name="RecipeSkill")
         self.internal_language = "en"
         self.recipe_storage = RecipeStorage()
+
+    @classproperty
+    def runtime_requirements(self):
+        return RuntimeRequirements(network_before_load=False,
+                                   internet_before_load=False,
+                                   gui_before_load=False,
+                                   requires_internet=True,
+                                   requires_network=True,
+                                   requires_gui=False,
+                                   no_internet_fallback=False,
+                                   no_network_fallback=False,
+                                   no_gui_fallback=True)
 
     # intent handlers
     @intent_handler('get.recipe.by.name.intent')
