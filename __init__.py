@@ -105,8 +105,8 @@ class RecipeSkill(InstructorSkill):
                                    requires_internet=True,
                                    requires_network=True,
                                    requires_gui=False,
-                                   no_internet_fallback=True,
-                                   no_network_fallback=True,
+                                   no_internet_fallback=False,
+                                   no_network_fallback=False,
                                    no_gui_fallback=True)
 
     # intent handlers
