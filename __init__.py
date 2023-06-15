@@ -92,8 +92,8 @@ def execute_search_by_ingredient(message: Message) -> Optional[dict]:
 
 
 class RecipeSkill(InstructorSkill):
-    def __init__(self):
-        super(RecipeSkill, self).__init__(name="RecipeSkill")
+    def __init__(self, **kwargs):
+        InstructorSkill.__init__(self, **kwargs)
         self.internal_language = "en"
         self.recipe_storage = RecipeStorage()
 
@@ -293,10 +293,9 @@ class RecipeSkill(InstructorSkill):
             ingredients = self._get_ingredients(recipe_data)
             string_ingredients = self._to_string_ingredients(ingredients)
             recipe_name = recipe_data.get('strMeal', 'the meal')
-            self.speak_dialog("YouWillNeed", {"recipe_name": recipe_name, "ingredients": string_ingredients})
+            self.speak_dialog("YouWillNeed",
+                              {"recipe_name": recipe_name,
+                               "ingredients": string_ingredients})
         else:
             self.speak_dialog("SearchFailed")
 
-
-def create_skill():
-    return RecipeSkill()
