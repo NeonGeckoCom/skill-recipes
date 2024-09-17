@@ -30,7 +30,8 @@ import re
 import requests
 from typing import Optional
 
-from mycroft import Message, intent_handler
+from ovos_bus_client.message import Message
+from ovos_workshop.decorators import intent_handler
 from neon_utils.skills.instructor_skill import InstructorSkill
 from neon_utils.message_utils import get_message_user
 from ovos_utils import classproperty
